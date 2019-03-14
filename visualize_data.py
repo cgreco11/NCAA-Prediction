@@ -5,6 +5,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 import plotly.graph_objs as go
+
+external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 #-------------------------------------------#
 # Loading Necessary Information
 def load_model(model = 'finalized_model.sav'):
@@ -91,28 +93,129 @@ def checkMatchupByName(season, team1, team2, teamNameMap, seasonAverages, model)
 
 #--------------------------------------------#
 #Layout Dash App
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, external_stylesheets = external_stylesheets)
+app.config.suppress_callback_exceptions = True
+metadataDict = {
+    'avgOR' : "Average Offensive Rebounds per Game",
+    'avgStl' : "Average Steals per Game",
+    'avgAst' : "Average Assists per Game",
+    'Neutral Win' : "Number of Neutral Site Wins",
+    'avgPf' : "Average Personal Fouls per Game",
+    'Away Win' : "Number of Away Wins",
+    'Avg FG%' : "Average Field Goal Percentage per Game",
+    'AvgWinRank' : "Average Rank of Team's Beaten that Season",
+    "avgBlk" : "Average Blocks per Game",
+    'Avg FG3%' : "Average 3 Point Field Goal Percentage per Game",
+    'Wins' : "Number of Wins",
+    "AvgLossRank" : "Average Rank of Team's lost to that Season",
+    'avgDr' : "Average Defensive Rebounds per Game",
+    "Games" : "Average Number of Games Played that Season",
+    "avgScore" : "Average Score per Game",
+    'Upsets' : "Average Number of Upset's per Season",
+    "Home Win" : "Number of Home Wins",
+    "AvgTO" : "Average Number of Turnovers",
+    'Avg FT%' : "Average Free Throw Percentage",
+    "Losses" : "Number of Losses"
+}
 
-app.layout = html.Div(children = [
-    html.H1(children = "Average Field Goal Percentage 2003-2017"),
+teamIDtoName = {v:k for k, v in teamNameMap.items()}
+
+
+tab1 = html.Div(children = [
     dcc.Dropdown(
         id = 'metadata-category',
-        options=[{'label': i, 'value': i} for i in seasonAverages.columns if i != "Season"],
-                value='Avg FG%'
+        options=[{'label': metadataDict[i], 'value': i} for i in sorted(seasonAverages.columns) if i not in  ["Season", "Team"]],
+        value='Avg FG%'
+    ),
+    dcc.Dropdown(
+        id = 'team-selection-metadata',
+        placeholder = "Select a Team to view Historical Data.",
+        options = [{"label" : teamIDtoName[i].title(), 'value' : i} for i in seasonAverages["Team"].unique()],
+        value = '',
+        multi = True
     ),
     dcc.Graph(
-        id = 'bar-chart',
-        figure = {
-            'data' : [
-            {'x' : seasonAverages["Season"].unique(), 'y' : seasonAverages.groupby("Season")["Avg FG%"].mean()}
-            ]
-        }
+        id = 'line-graph')
+])
+
+#Update Line Graph on Main Page
+@app.callback(
+    dash.dependencies.Output('line-graph', 'figure'),
+    [dash.dependencies.Input('metadata-category', 'value'),
+    dash.dependencies.Input("team-selection-metadata", 'value')]
+)
+def update_line(category, teams):
+    traces = []
+    if teams:
+        for team in teams:
+            teamSeasonAverages = seasonAverages[seasonAverages["Team"] == team]
+            x_vals = teamSeasonAverages["Season"].unique()
+            y_vals = teamSeasonAverages.groupby("Season")[category].mean()
+            traces.append(go.Scatter(x = x_vals, y = y_vals, name = teamIDtoName[team].title()))
+    x_vals = seasonAverages["Season"].unique()
+    y_vals = seasonAverages.groupby("Season")[category].mean()
+    traces.append(go.Scatter(x = x_vals, y = y_vals, name = "All"))
+
+    return {
+        'data' : traces,
+        'layout' : go.Layout(
+            xaxis = {"title" : "Season"},
+            yaxis = {"title" : category}
+        )
+    }
+
+#Visualize Pre
+tab2 = html.Div(children = [
+    dcc.Dropdown(
+        id = 'pred-team-1',
+        options = [{"label" : teamIDtoName[i].title(), 'value' : i} for i in seasonAverages["Team"].unique()],
+        value='',
+        placeholder = 'Pick Team 1 for Prediction'
+    ),
+    dcc.Dropdown(
+        id = 'pred-team-2',
+        options = [{"label" : teamIDtoName[i].title(), 'value' : i} for i in seasonAverages["Team"].unique()],
+        value = '',
+        placeholder = "Pick Team 2 for Prediction"
+    ),
+    dcc.Dropdown(
+        id = 'pred-year',
+        options = [{'label' : i, "value" : i} for i in seasonAverages["Season"].unique()],
+        value = '',
+        placeholder = "Pick a Year for the Comparison to take place."
+    ),
+    html.Div(id = 'pred-text'),
+
+])
+
+@app.callback(
+    dash.dependencies.Output('pred-text', 'children'),
+    [dash.dependencies.Input('pred-team-1', 'value'),
+    dash.dependencies.Input('pred-team-2', 'value'),
+    dash.dependencies.Input('pred-year', 'value')]
+)
+def make_predictions(team1, team2, year):
+    team1 = str(team1)
+    team2 = str(team2)
+    year = str(year)
+    team1_pred, pred, team2_pred = checkMatchupByName(year, team1, team2, teamNameMap, seasonAverages, finalModel)
+    return "{} has a {} % chance of beating {} in {}".format(team1_pred, pred, team2_pred, year)
+
+app.layout = html.Div(children = [
+    dcc.Tabs(
+    id = "tabsID",
+    children=[
+        dcc.Tab(label = "Historical Comparisons",
+                children = [tab1]),
+        dcc.Tab(label = 'Prediction',
+                children = [tab2]),
+    ],
+    value = "Historical Comparisons"
     )
 ])
 
 
-
 if __name__ == "__main__":
-    app.run_server(debug = True)
+    app.run_server(debug = True, host = '0.0.0.0')
 
 #print(checkMatchupByName(2017, 'North Carolina', "Villanova", finalTeamNameMap, seasonAverages, finalModel))
