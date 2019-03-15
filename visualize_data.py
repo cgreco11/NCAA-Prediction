@@ -4,9 +4,10 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+import dash_table
 import plotly.graph_objs as go
 
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+external_stylesheets = ['http://necolas.github.io/normalize.css/']
 #-------------------------------------------#
 # Loading Necessary Information
 def load_model(model = 'finalized_model.sav'):
@@ -19,6 +20,9 @@ def load_data(data = 'data/SeasonAverages.csv', encoding = 'utf-8', index_col = 
 
 finalModel = load_model()
 seasonAverages = load_data(index_col = 0)
+
+regularSeasonResults = load_data('data/RegularSeasonCompactResults.csv')
+tourneySeasonResults = load_data('data/NCAATourneyCompactResults.csv')
 
 def compareMatchups(season_team1_team2, regSeasonDf):
     season, team1, team2 = season_team1_team2.split("_")
@@ -79,10 +83,7 @@ altTeamNameMap = dict(zip(altTeamNames['TeamNameSpelling'].str.lower(), teamName
 finalTeamNameMap = {**teamNameMap, **altTeamNameMap}
 
 def checkMatchupByName(season, team1, team2, teamNameMap, seasonAverages, model):
-    team1_id = teamNameMap[team1.lower()]
-    team2_id = teamNameMap[team2.lower()]
-    print(team1_id, team2_id)
-    search_term = str(season) + "_" + str(team1_id) + "_" + str(team2_id)
+    search_term = str(season) + "_" + str(team1) + "_" + str(team2)
 
     outResultDict = {search_term: compareMatchups(search_term, seasonAverages)}
     #testMatrix = xgb.DMatrix(pd.DataFrame.from_dict(outResultDict, orient = 'index').values)
@@ -185,7 +186,7 @@ tab2 = html.Div(children = [
         placeholder = "Pick a Year for the Comparison to take place."
     ),
     html.Div(id = 'pred-text'),
-
+    html.Div(id = 'did-they-play')
 ])
 
 @app.callback(
@@ -198,9 +199,11 @@ def make_predictions(team1, team2, year):
     team1 = str(team1)
     team2 = str(team2)
     year = str(year)
-    team1_pred, pred, team2_pred = checkMatchupByName(year, team1, team2, teamNameMap, seasonAverages, finalModel)
-    return "{} has a {} % chance of beating {} in {}".format(team1_pred, pred, team2_pred, year)
-
+    if team1 != team2:
+        team1_pred, pred, team2_pred = checkMatchupByName(year, team1, team2, teamNameMap, seasonAverages, finalModel)
+        return "{} has a {} % chance of beating {} in {}.".format(teamIDtoName[int(team1_pred)].title(), pred, teamIDtoName[int(team2_pred)].title(), year)
+    else:
+        return "Can't compare the same team."
 app.layout = html.Div(children = [
     dcc.Tabs(
     id = "tabsID",
@@ -213,6 +216,41 @@ app.layout = html.Div(children = [
     value = "Historical Comparisons"
     )
 ])
+
+@app.callback(
+    dash.dependencies.Output('did-they-play', 'children'),
+    [dash.dependencies.Input('pred-team-1', 'value'),
+    dash.dependencies.Input('pred-team-2', 'value'),
+    dash.dependencies.Input('pred-year', 'value')]
+)
+def didTheyPlay(team1, team2, year):
+    team1 = team1
+    team2 = team2
+    year = year
+    regular = []
+    tourney = []
+    regResults = []
+    regSeason = regularSeasonResults[regularSeasonResults["Season"] == year]
+    wTeam1 = regSeason[regSeason["WTeamID"] == team1]
+    lTeam1 = wTeam1[wTeam1["LTeamID"] == team2]
+
+    wTeam2 = regSeason[regSeason["WTeamID"] == team2]
+    lTeam2 = wTeam2[wTeam2["LTeamID"] == team1]
+
+    regularSeasonOut = pd.concat([lTeam1, lTeam2])
+
+    tourneySeason = tourneySeasonResults[tourneySeasonResults["Season"] == year]
+    wTeamTourney = tourneySeason[tourneySeason['WTeamID'] == team1]
+    lTeamTourney = wTeamTourney[wTeamTourney["LTeamID"] == team2]
+
+
+    return [html.Div(), html.H2("\n\nRegular Season Results:"),
+     dash_table.DataTable(
+        id = 'regularSeason',
+        columns = [{'name' : i, 'id' : i} for i in regularSeasonOut.columns],
+        data= regularSeasonOut.to_dict("rows")
+        )]
+
 
 
 if __name__ == "__main__":
