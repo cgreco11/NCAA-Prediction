@@ -15,6 +15,25 @@ for idx, row in seasonResults.iterrows():
     season = row["Season"]
     wteamid = row["WTeamID"]
     lteamid = row["LTeamID"]
+
+    wteamposs = row["WFGA"] + (0.475 * row["WFTA"]) - row["WOR"] + row["WTO"]
+    lteamposs = row['LFGA'] + (0.475 * row["LFTA"]) - row["LOR"] + row["LTO"]
+
+
+    wteamoffrating = 100 * (row["WScore"] / wteamposs)
+    lteamoffrating = 100 * (row["LScore"] / lteamposs)
+
+    wteamdefrating = lteamoffrating
+    lteamdefrating = wteamoffrating
+
+    outDict[season][wteamid]["Poss"] += wteamposs
+    outDict[season][lteamid]["Poss"] += lteamposs
+    outDict[season][wteamid]["OffRating"] += wteamoffrating
+    outDict[season][lteamid]["OffRating"] += lteamoffrating
+    outDict[season][wteamid]["DefRating"] += wteamdefrating
+    outDict[season][lteamid]['DefRating'] += lteamdefrating
+    outDict[season][wteamid]["NetRating"] += (wteamoffrating - wteamdefrating)
+    outDict[season][lteamid]["NetRating"] += (lteamoffrating - lteamdefrating)
     #Winning Info
     for col in winningCols:
         if col == 'WLoc':
@@ -61,6 +80,10 @@ newOutDict = defaultdict(lambda: defaultdict(int))
 for season, team_dict in outDict.items():
     for team, col in team_dict.items():
         games = float(col["Games"])
+        avgPoss = (col["Poss"] / games)
+        avgOffRating = (col["OffRating"] / games)
+        avgDefRating = (col["DefRating"] / games)
+        avgNetRating = (col["NetRating"] / games)
         avgTo = (col["TO"] / games)
         avgFGA3 = (col["FGA3"] / games)
         avgScore = (col["Score"] / games)
@@ -109,7 +132,12 @@ for season, team_dict in outDict.items():
                                     "Upsets" : col["Upsets"],
                                     "Games" : col["Games"],
                                     "AvgWinRank" : round(avgWinRank,2),
-                                    "AvgLossRank" : round(avgLossRank,2)}
+                                    "AvgLossRank" : round(avgLossRank,2),
+                                    "AvgOffRating" : round(avgOffRating,2),
+                                    "AvgDefRating" : round(avgDefRating,2),
+                                    "AvgNetRating" : round(avgNetRating,2),
+                                    'Top 25 Wins' : col["Top 25 Wins"],
+                                    "Top 10 Wins" : col["Top 10 Wins"]}
 
 out_df = pd.DataFrame.from_dict(newOutDict, orient = 'index')
 out_df.to_csv("data/SeasonAverages.csv")
